@@ -424,6 +424,9 @@ RobotDriver::RobotDriver() : Node("roverrobotics", rclcpp::NodeOptions().use_int
     RCLCPP_WARN(get_logger(),
                 "Robot Type is currently not suppported. Stopping this Node");
     rclcpp::shutdown();
+    /* every other failure branch above returns; creating the timers below on a
+     * shut-down context throws RCLError and aborts instead of exiting cleanly */
+    return;
   }
 
   /* start in the configured estop state; a reset on estop_reset_topic releases it */

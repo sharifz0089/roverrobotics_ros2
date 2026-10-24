@@ -20,6 +20,12 @@ class RoverRobotics::CommSerial : public RoverRobotics::CommBase {
   CommSerial(const char *device, std::function<void(std::vector<uint8_t>)>,
              std::vector<uint8_t>);
   /*
+   * @brief Stop the read thread, join it and close the port.
+   * Without this the joinable std::thread member is destroyed while running,
+   * which calls std::terminate() and aborts the driver on every shutdown.
+   */
+  ~CommSerial() override;
+  /*
    * @brief Write data to Serial Device
    * by accepting a vector of unsigned int 32 and convert it to a byte stream
    * @param msg message to convert and write to device
@@ -44,6 +50,9 @@ class RoverRobotics::CommSerial : public RoverRobotics::CommBase {
   int read_size_;
   int serial_port_;
   std::atomic<bool> is_connected_;
+  std::atomic<bool> stop_requested_{false};
   std::thread serial_read_thread_;
   const int TIMEOUT_MS_ = 1000; //1 sec timeout
+  /* how often the read loop wakes with no data to check stop_requested_ */
+  const int POLL_TIMEOUT_MS_ = 100;
 };

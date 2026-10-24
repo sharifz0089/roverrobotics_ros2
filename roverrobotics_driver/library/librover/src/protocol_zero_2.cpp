@@ -85,6 +85,28 @@ Zero2ProtocolObject::Zero2ProtocolObject(
   std::cerr << "protocol is running..." << std::endl;
 }
 
+Zero2ProtocolObject::~Zero2ProtocolObject() {
+  stop_requested_ = true;
+  for (std::thread *t : {&motor_speed_update_thread_, &write_to_robot_thread_,
+                         &slow_data_write_thread_}) {
+    if (t->joinable()) t->join();
+  }
+
+  /* leave the motors at neutral rather than at the last commanded duty */
+  if (comm_base_) {
+    robotstatus_mutex_.lock();
+    motors_speeds_[LEFT_MOTOR] = MOTOR_NEUTRAL_;
+    motors_speeds_[RIGHT_MOTOR] = MOTOR_NEUTRAL_;
+    robotstatus_mutex_.unlock();
+    send_motors_commands();
+  }
+
+  /* Join the serial read thread now, while this object is intact: its callback
+   * is unpack_comm_response(), which locks robotstatus_mutex_, and members are
+   * destroyed in reverse order -- the mutex before comm_base_. */
+  comm_base_.reset();
+}
+
 void Zero2ProtocolObject::load_persistent_params() {
   /* trim (aka curvature correction) */
   if (auto param = persistent_params_->read_param("trim")) {
@@ -141,7 +163,7 @@ void Zero2ProtocolObject::motors_control_loop(int sleeptime) {
           std::chrono::system_clock::now().time_since_epoch());
   std::chrono::milliseconds time_from_msg;
 
-  while (true) {
+  while (!stop_requested_) {
     std::chrono::milliseconds time_now =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch());
@@ -444,7 +466,7 @@ void Zero2ProtocolObject::register_comm_base(const char *device) {
 }
 
 void Zero2ProtocolObject::send_getvalues_command(int sleeptime) {
-  while (true) {
+  while (!stop_requested_) {
     if (comm_type_ == "serial") {
       unsigned char *payloadptr;
       uint16_t crc;

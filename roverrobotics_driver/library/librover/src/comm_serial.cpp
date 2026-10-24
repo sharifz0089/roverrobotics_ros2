@@ -1,6 +1,8 @@
 
 #include "comm_serial.hpp"
 
+#include <poll.h>
+
 namespace RoverRobotics {
 CommSerial::CommSerial(const char *device,
                        std::function<void(std::vector<uint8_t>)> parsefunction,
@@ -58,6 +60,16 @@ CommSerial::CommSerial(const char *device,
       [this, parsefunction]() { this->read_device_loop(parsefunction); });
 }
 
+CommSerial::~CommSerial() {
+  stop_requested_ = true;
+  if (serial_read_thread_.joinable()) {
+    serial_read_thread_.join();
+  }
+  if (serial_port_ >= 0) {
+    close(serial_port_);
+  }
+}
+
 void CommSerial::write_to_device(std::vector<uint8_t> msg) {
   serial_write_mutex_.lock();
   if (serial_port_ >= 0) {
@@ -75,9 +87,14 @@ void CommSerial::read_device_loop(
   std::chrono::milliseconds time_last =
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now().time_since_epoch());
-  while (true) {
+  while (!stop_requested_) {
+    /* read() blocks until a byte arrives, and once the protocol threads stop
+     * polling the robot none ever will; wait with a timeout instead so the
+     * destructor's stop request is seen within POLL_TIMEOUT_MS_. */
+    struct pollfd pfd = {serial_port_, POLLIN, 0};
+    int ready = poll(&pfd, 1, POLL_TIMEOUT_MS_);
     uint8_t read_buf[read_size_];
-    int num_bytes = read(serial_port_, &read_buf, read_size_);
+    int num_bytes = ready > 0 ? read(serial_port_, &read_buf, read_size_) : 0;
     std::chrono::milliseconds time_now =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch());

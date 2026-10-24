@@ -51,6 +51,8 @@ private:
   std::thread write_to_robot_thread_;
   std::thread slow_data_write_thread_;
   std::thread motor_speed_update_thread_;
+  /* set by the destructor; ends the write and control loops */
+  std::atomic<bool> stop_requested_{false};
   bool estop_;
   bool closed_loop_;
   // Motor PID variables
@@ -143,6 +145,12 @@ public:
   Zero2ProtocolObject(const char *device, std::string new_comm_type,
                       Control::robot_motion_mode_t robot_mode,
                       Control::pid_gains pid, Control::angular_scaling_params angular_scale);
+  /*
+   * @brief Stop the worker threads, command both motors to neutral and close
+   * the port. The threads loop forever otherwise, and destroying them while
+   * joinable calls std::terminate() -- the driver aborted on every Ctrl-C.
+   */
+  ~Zero2ProtocolObject() override;
   /*
    * @brief Trim Robot Velocity
    * Modify robot velocity differential (between the left side/right side) with
